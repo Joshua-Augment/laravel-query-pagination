@@ -1,13 +1,8 @@
 # Laravel Query Pagination
 
-A lightweight, framework-friendly helper for building **consistent, API-friendly pagination, sorting, filtering, and search** endpoints in Laravel.
+A lightweight package for building **consistent, API-friendly pagination, sorting, filtering, and search** endpoints in Laravel — now using a **single unified class (`PaginatedQuery`)** for both querying and responding.
 
-Instead of re-writing `page`, `per_page`, `search`, `filters[...]`, and `sort_by` logic in every controller, this package provides:
-
-- `PaginatedQuery` — applies search, filters, sorting, and pagination to any Eloquent query.
-- `PaginatedResponse` — returns a unified JSON shape for all paginated endpoints.
-
-This makes it easy for frontends (React, Vue, mobile apps, etc.) to rely on a **single API contract** across your backend.
+This package standardizes the query params and JSON output across all your endpoints, making it simple for your frontend (React, Vue, mobile apps) to plug in one standard pattern.
 
 ---
 
@@ -17,7 +12,7 @@ This makes it easy for frontends (React, Vue, mobile apps, etc.) to rely on a **
 composer require augmentmy/laravel-query-pagination
 ```
 
-The service provider is auto-discovered by Laravel; no manual registration required.
+The service provider is auto‑discovered.
 
 ### Requirements
 
@@ -27,89 +22,47 @@ The service provider is auto-discovered by Laravel; no manual registration requi
 
 ---
 
-## 🔌 HTTP API Contract
+## 🔌 Unified Usage
 
-This package standardizes the query parameters and response structure of all paginated endpoints.
+The package now exposes ONE primary class:
 
-### **Query Parameters (client → server)**
+- `PaginatedQuery`  
+  - builds the query (search, filters, sorting, pagination)  
+  - can return the raw paginator via `paginate()`  
+  - or return JSON API response via `toResponse()`
 
-| Param              | Type     | Description |
-|--------------------|----------|-------------|
-| `page`             | int      | 1-based page index. |
-| `per_page`         | int      | Items per page (clamped between **1** and **100**). |
-| `search`           | string   | Free-text search applied across configured columns. |
-| `filters[key]`     | mixed    | Per-field filters, e.g. `filters[role]=admin`. |
-| `sort_by`          | string   | Column name to sort by (must be whitelisted). |
-| `sort_dir`         | string   | `"asc"` or `"desc"` (defaults to `"asc"`). |
-
-### Example request
-
-```
-GET /api/users?page=2&per_page=25&search=john&filters[role]=admin&sort_by=name&sort_dir=asc
-```
-
----
-
-## 📦 Unified Response Structure
-
-All controllers using this package should return:
-
-```json
-{
-  "data": [
-    { "id": 1, "name": "John Doe", "email": "john@example.com" }
-  ],
-  "meta": {
-    "current_page": 1,
-    "per_page": 25,
-    "last_page": 6,
-    "total": 143
-  }
-}
-```
-
-This is produced using:
+### Minimal Controller Example
 
 ```php
-return PaginatedResponse::fromPaginator($paginator);
-```
-
----
-
-## 🛠️ Usage Example
-
-### Controller
-
-```php
-use App\Models\User;
-use Illuminate\Http\Request;
 use AugmentMy\LaravelQueryPagination\PaginatedQuery;
-use AugmentMy\LaravelQueryPagination\PaginatedResponse;
+use Illuminate\Http\Request;
+use App\Models\User;
 
 class UserController
 {
     public function index(Request $request)
     {
-        $paginator = (new PaginatedQuery(
+        return PaginatedQuery::make(
             baseQuery: User::query(),
             searchable: ['name', 'email'],
             filterable: ['role', 'status'],
             sortable: ['name', 'created_at'],
             defaultSort: 'created_at',
             defaultSortDir: 'desc',
-        ))->fromRequest($request);
-
-        return PaginatedResponse::fromPaginator($paginator);
+        )->toResponse($request);
     }
 }
 ```
 
+This is the cleanest form.  
+No need to manually call `PaginatedResponse`.
+
 ---
 
-## ⚙️ `PaginatedQuery` Constructor
+## ⚙️ Constructor Signature
 
 ```php
-new PaginatedQuery(
+PaginatedQuery::make(
     Builder $baseQuery,
     array $searchable = [],
     array $filterable = [],
@@ -119,92 +72,79 @@ new PaginatedQuery(
 )
 ```
 
-### Parameter Breakdown
+### Parameters
 
-| Param           | Description |
-|-----------------|-------------|
-| `$baseQuery`     | Any Eloquent builder (e.g., `User::query()`). |
-| `$searchable`    | Columns included in the text search. |
-| `$filterable`    | Allowed filter fields (`filters[field]=value`). |
-| `$sortable`      | Allowed columns for sorting. |
-| `$defaultSort`   | Default sort column (if no `sort_by` specified). |
-| `$defaultSortDir`| `"asc"` or `"desc"` (default). |
+| Param             | Description |
+|------------------|-------------|
+| `baseQuery`       | Any Eloquent query builder (`User::query()`, etc.) |
+| `searchable`      | Columns used when `search=` is provided |
+| `filterable`      | Allowed filter fields (`filters[field]=value`) |
+| `sortable`        | Allowed columns for `sort_by` |
+| `defaultSort`     | Fallback sort column |
+| `defaultSortDir`  | `"asc"` or `"desc"` |
 
 ---
 
-## 🔍 Search Behavior
+## 🔍 Supported Query Parameters
 
-If `search` is provided, it applies:
+| Param                | Example              | Description |
+|----------------------|----------------------|-------------|
+| `page`               | `page=3`             | Page number (1‑based) |
+| `per_page`           | `per_page=50`        | Items per page (clamped 1–100) |
+| `search`             | `search=john`        | Searches all `$searchable` fields |
+| `filters[key]`       | `filters[role]=admin`| Per-field filters |
+| `sort_by`            | `sort_by=name`       | Sorting field |
+| `sort_dir`           | `sort_dir=desc`      | Sorting direction |
 
-```sql
-WHERE (column1 LIKE "%term%" OR column2 LIKE "%term%" ...)
+---
+
+## 📦 JSON Response Format
+
+All endpoints return:
+
+```json
+{
+  "data": [...],
+  "meta": {
+    "current_page": 1,
+    "from": 1,
+    "to": 25,
+    "per_page": 25,
+    "last_page": 6,
+    "total": 143,
+    "path": "https://api.example.com/api/users",
+    "first_page_url": "...",
+    "last_page_url": "...",
+    "next_page_url": "...",
+    "prev_page_url": null,
+    "has_more_pages": true,
+    "on_first_page": true
+  }
+}
 ```
 
-Example:
+These values come directly from Laravel’s `LengthAwarePaginator`.
 
-```
-GET /api/users?search=jane
-```
+---
 
-With:
+## 🔧 Raw paginator access (optional)
+
+If you ever need the paginator directly:
 
 ```php
-searchable: ['name', 'email']
+$paginator = PaginatedQuery::make(
+    User::query(),
+    searchable: ['name']
+)->paginate($request);
 ```
 
----
-
-## 🧩 Filtering Behavior
-
-Filters come from:
-
-```
-filters[field]=value
-```
-
-Example:
-
-```
-GET /api/users?filters[role]=admin&filters[status]=active
-```
-
-Only keys listed in `$filterable` are applied.
-
----
-
-## ↕ Sorting Behavior
-
-Request:
-
-```
-GET /api/users?sort_by=name&sort_dir=desc
-```
-
-Rules:
-
-- `sort_by` must appear in the `$sortable` list.
-- If `sort_by` missing, defaults apply.
-- Any invalid sort direction becomes `"asc"`.
-
----
-
-## 📄 Pagination Behavior
-
-- `page` defaults to `1`
-- `per_page` defaults to `15`
-- `per_page` always clamped between **1** and **100**
-
-Example:
-
-```
-GET /api/users?page=3&per_page=50
-```
+You still get the `LengthAwarePaginator` object exactly as Laravel returns it.
 
 ---
 
 ## 🧪 Testing (for contributors)
 
-This package uses **Orchestra Testbench** to bootstrap a miniature Laravel environment.
+This project uses **Orchestra Testbench** to bootstrap a minimal Laravel environment.
 
 Run:
 
@@ -215,24 +155,22 @@ vendor/bin/phpunit
 
 Tests use:
 
-- in-memory SQLite (`:memory:`)
-- temporary `users` table
-- simple model for verifying search/filter/sort/pagination
+- In‑memory SQLite (`:memory:`)
+- Temporary table creation
+- Simple models to validate search/filter/sort/pagination
 
 ---
 
 ## 🗺️ Roadmap
 
-- Range filter support (`filters[created_at][from]`, `filters[created_at][to]`)
-- Relationship filtering (`filters[role.name]`)
-- Config file for:
-  - global max `per_page`
-  - default sorting
-  - allowed filter operators
-- Controller trait `HasPaginatedIndex`
+- Range-based filtering (`from`, `to`)
+- Relationship filters (`filters[role.name]`)
+- Configurable operators
+- Controller trait: `HasPaginatedIndex`
+- Global config: max per_page, default sorting rules
 
 ---
 
 ## 📄 License
 
-MIT License. See the `LICENSE` file for details.
+MIT License. See `LICENSE` for details.

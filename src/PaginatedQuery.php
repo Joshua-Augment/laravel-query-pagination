@@ -3,6 +3,7 @@
 namespace AugmentMy\LaravelQueryPagination;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 
@@ -16,6 +17,18 @@ class PaginatedQuery
         protected ?string $defaultSort = null,
         protected string $defaultSortDir = 'asc',
     ) {}
+
+
+    /**
+     * Convenience: build paginator from the Request and return JSON response.
+     */
+    public function toResponse(Request $request): JsonResponse
+    {
+        $paginator = $this->fromRequest($request);
+
+        return PaginatedResponse::fromPaginator($paginator);
+    }
+
 
     public function fromRequest(Request $request): LengthAwarePaginator
     {
@@ -51,5 +64,26 @@ class PaginatedQuery
         $perPage = min(max($perPage, 1), 100);
 
         return $query->paginate($perPage)->appends($request->query());
+    }
+
+    /**
+     * Optional ergonomic static constructor if you like the style.
+     */
+    public static function make(
+        Builder $baseQuery,
+        array $searchable = [],
+        array $filterable = [],
+        array $sortable = [],
+        ?string $defaultSort = null,
+        string $defaultSortDir = 'asc',
+    ): self {
+        return new self(
+            baseQuery: $baseQuery,
+            searchable: $searchable,
+            filterable: $filterable,
+            sortable: $sortable,
+            defaultSort: $defaultSort,
+            defaultSortDir: $defaultSortDir,
+        );
     }
 }
